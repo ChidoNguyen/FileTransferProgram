@@ -1,0 +1,31 @@
+#!/usr/bin/python3
+# Chido Nguyen
+# Project 2 : CS372 FTP client-server program
+# nguychid@oregonstate.edu 931506965
+
+from socket import *
+import sys
+from struct import * #for unpack
+#https://docs.python.org/3/tutorial/index.html
+
+
+def main():#/program server port command text/port port
+	serverPort = int(sys.argv[1])#http://www.pythonforbeginners.com/system/python-sys-argv
+	#https://pymotw.com/2/socket/tcp.html
+	#socket creation
+	serverSocket = socket(AF_INET,SOCK_STREAM)
+	serverSocket.connect(('localhost', serverPort))
+	message = input("testing input:")
+	serverSocket.send((message.encode()))
+	#https://stackoverflow.com/questions/444591/convert-a-string-of-bytes-into-an-int-python
+	#https://docs.python.org/3/library/stdtypes.html#int.to_bytes
+	x =serverSocket.recv(4)
+	x = int.from_bytes( x , byteorder = 'little', signed = False)
+	tmp = (serverSocket.recv(x)).decode()
+	#http://www.pythonforbeginners.com/files/reading-and-writing-files-in-python
+	file_object = open("tmp2", "w")
+	file_object.write(tmp)
+	file_object.close()
+	serverSocket.close()
+	
+main()
