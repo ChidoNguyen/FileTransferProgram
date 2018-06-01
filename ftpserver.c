@@ -4,37 +4,40 @@ Project 2: FTP Operations using Client-Server (2 connections) model and Socket A
 Citations: Majority of code is reused from project 1 or from CS344 Socket Block with brewster.
 */
 #include <dirent.h>
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <stdlib.h>
 
-int BIGNUMBER = 500000; // buffer size 
+int BIGNUMBER = 300000000; // buffer size 
 
 
 /*Setup a socket and return the i/o stream int value for socket*/
 /*return the file descriptor number*/
 int new_connection_setup(int portNum){
 	int listenSocketFD;
-	struct sockaddr_in serverAddress, clientAddress;
-	
-	
+	struct sockaddr_in serverAddress;
 	memset((char*)&serverAddress, '\0', sizeof(serverAddress)); // Clears everything out.
 	serverAddress.sin_family = AF_INET; // generate socket with network capability 
 	serverAddress.sin_port = htons(portNum); // store port #
 	serverAddress.sin_addr.s_addr = INADDR_ANY; // allow for any address to connect
-
 	listenSocketFD = socket(AF_INET,SOCK_STREAM, 0); // init socket
-	
-	if(listenSocketFD < 0) error("Error setting up socket");
-	//Bind the socket to the port so we can receive and send data 
-	if(bind(listenSocketFD, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0)
-		error("Binding of socket and port failed");
-	else
-		printf("Server Started, Port: %i\n",portNum);
+	//BEEJS!
+	int yes=1;
+	// lose the pesky "Address already in use" error message
+	if (setsockopt(listenSocketFD,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof yes) == -1) {
+		perror("setsockopt");
+		exit(1);
+	} 
+	if(bind(listenSocketFD, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0){
+		perror("Binding of socket and port failed");
+		exit(1);
+	}
 	return listenSocketFD;
 }
 /* parse out arguments from client command via string tokens*/
@@ -80,6 +83,9 @@ void direct_me(int socket){
 		strcat(fusion,listing[i]);
 		strcat(fusion,nLine);
 	}
+	int x = strlen(fusion);
+	send(socket, &x, sizeof(x),0);
+	
 	send(socket,fusion, sizeof(fusion), 0);
 	
 }
@@ -90,11 +96,14 @@ void transfer_me(int socket, char* fileName){
 	if(!inFile){
 		perror("Failed to Open\n");
 		fflush(stderr);
+		int error = 0;
+		send(socket , &error, sizeof(error),0);
 		return;
 	}
 	else{
 		int x = 0;
-		char file_buffer[BIGNUMBER];
+		char *file_buffer;
+		file_buffer = (char *) malloc( sizeof(char) * BIGNUMBER);
 		memset(file_buffer, '\0',sizeof(file_buffer));
 		char c = getc(inFile);
 		while(c != EOF){
@@ -103,7 +112,7 @@ void transfer_me(int socket, char* fileName){
 			c=getc(inFile);
 		}
 		//OTP PROGRAM FROM 344 HELPS WITH THIS SECTION//
-		send(socket, &x, sizeof(x), 0);
+		send(socket, &x, sizeof(x), 0); // https://stackoverflow.com/questions/9140409/transfer-integer-over-a-socket-in-c
 		int sent = 0;
 		char *ptr;
 		ptr = file_buffer;
@@ -113,6 +122,7 @@ void transfer_me(int socket, char* fileName){
 		}
 	}
 	fclose(inFile);
+	free(file_buffer);
 }
 
 //./ftserver [port#]
@@ -132,34 +142,72 @@ int main(int argc, char* argv[]){
 	}
 	portNumber = atoi(argv[1]); // convert string to int from our user directed port#
 	int listenSocketFD = new_connection_setup(portNumber); //setup our socket 
+	if ( listenSocketFD > 0){
+		printf("Server Started, Port: %i\n",portNumber);
+	}
 	listen(listenSocketFD, 5); // turns socket on , 5 connections max
 	//////////////////////////////////////////////////////////
 	
 	//Server "alive" setup//
-	char command[1024];
-	memset(command, '\0', sizeof(command));
+
 	while(1){
+		char command[1024];
+		memset(command, '\0', sizeof(command));
 		sizeOfClientInfo = sizeof(clientAddress);
 		establishedConnectionFD = accept(listenSocketFD, (struct sockaddr *)&clientAddress, &sizeOfClientInfo);
-		// receive the command //
 		recv(establishedConnectionFD, command, 1024, 0); // tested 
 		char* arg[32];
+		memset(arg, 0 , sizeof(char)*32);
 		Tokenize(command,arg); // parse out arguments 
 		/*
 		./program server port command port
 		*/
+		
+		//data port//
+		int dataport;
+		int dataConFD;
+		int estCon;
+		socklen_t sizeOfClientInfo2;
+		struct sockaddr_in clientAddress2;
 		if(strcmp(arg[3], "-l") == 0){
 			//handles the "get" directory command
-			direct_me(establishedConnectionFD);
+			printf("Get Directory Command\n");
+			fflush(stdout);
+			dataport = atoi(arg[4]);
+			dataConFD = new_connection_setup(dataport);
+			listen(dataConFD,1);
+			sizeOfClientInfo2 = sizeof(clientAddress2);
+			estCon = accept(dataConFD, (struct sockaddr *)&clientAddress2, &sizeOfClientInfo2);
+			if(estCon > 0){
+				printf("Sending Directory, Port: %i\n",dataport);
+				fflush(stdout);
+			}
+			direct_me(estCon);
+ 
+			close(estCon);
+			close(dataConFD);
 		}
 		else if(strcmp(arg[3],"-g") == 0){
-			transfer_me(establishedConnectionFD, arg[4]);
+			printf("Get File Command\n");
+			fflush(stdout);
+			dataport = atoi(arg[5]);
+			dataConFD = new_connection_setup(dataport);
+			listen(dataConFD,1);
+			sizeOfClientInfo2 = sizeof(clientAddress2);
+			estCon = accept(dataConFD, (struct sockaddr *)&clientAddress2, &sizeOfClientInfo2);
+			if(estCon > 0){
+				printf("Sending File, Port: %i\n",dataport);
+				fflush(stdout);
+			}
+			transfer_me(estCon, arg[4]);
+			close(estCon);
+			close(dataConFD);
 		}
 		else
 			printf("Invalid Commands: format should be 'ftclient host port command port'\n");
 		close(establishedConnectionFD);
 	}
-	
+	close(listenSocketFD);
 
 	return 0;
 }

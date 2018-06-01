@@ -6,26 +6,96 @@
 from socket import *
 import sys
 from struct import * #for unpack
+from time import sleep #to delay connection so socket can setup
 #https://docs.python.org/3/tutorial/index.html
 
+#globals https://stackoverflow.com/questions/664294/is-it-possible-only-to-declare-a-variable-without-assigning-any-value-in-python
+serverHost = None
+serverPort = None
 
-def main():#/program server port command text/port port
-	serverPort = int(sys.argv[1])#http://www.pythonforbeginners.com/system/python-sys-argv
+#Establishes a connection with the server #
+def ringring():
+	#https://www.geeksforgeeks.org/global-local-variables-python/
+	global serverHost
+	global serverPort
+	serverHost = sys.argv[1] + ".engr.oregonstate.edu"
+	serverPort = int(sys.argv[2])
+	#http://www.pythonforbeginners.com/system/python-sys-argv
 	#https://pymotw.com/2/socket/tcp.html
 	#socket creation
 	serverSocket = socket(AF_INET,SOCK_STREAM)
-	serverSocket.connect(('localhost', serverPort))
-	message = input("testing input:")
+	serverSocket.connect((serverHost, serverPort))
+	return serverSocket
+
+#Combines the parameters into a single string to send to server#
+def rejoin():
+	tmp = sys.argv[0]
+	for i in range(1,len(sys.argv)):
+		tmp +=' '
+		tmp +=sys.argv[i]
+	return tmp
+
+#Server tells client how long array buffer it is sending, and then client sets recv() to match #
+def get_dir(dataSocket):
+	x = dataSocket.recv(4)
+	x = int.from_bytes(x, byteorder = 'little', signed = False)
+	tmp = (dataSocket.recv(x)).decode()
+	print(tmp)
+
+#Gets server to send back file , if fileName is already existing append copy_ to it 
+def get_files(dataSocket,fileName):
+	x =dataSocket.recv(4)
+	x = int.from_bytes( x , byteorder = 'little', signed = False)
+	if x != 0:
+		tmp = (dataSocket.recv(x)).decode()
+		#http://www.pythonforbeginners.com/files/reading-and-writing-files-in-python
+		file_object = open(fileName, "w+")
+		file_object.write(tmp)
+		file_object.close()
+	else:
+		print("File Not Found.")
+	
+	
+def main():#/program server port command text/port port
+	if len(sys.argv) < 5:
+		print("Not Enough Arguments")
+		sys.exit()
+		
+	#https://stackoverflow.com/questions/664294/is-it-possible-only-to-declare-a-variable-without-assigning-any-value-in-python
+	# serverHost = sys.argv[1] + ".engr.oregonstate.edu"
+	# serverPort=int(sys.argv[2])
+	serverSocket = ringring()
+	command=sys.argv[3]
+	if command == '-g':
+		fileName=sys.argv[4]
+		dataPort=int(sys.argv[5])
+	elif command == '-l':
+		dataPort = int(sys.argv[4])
+	else:
+		print("Bad Commands")
+		serverSocket.close()
+		sys.exit()
+	# #http://www.pythonforbeginners.com/system/python-sys-argv
+	# #https://pymotw.com/2/socket/tcp.html
+	
+	# #socket creation
+	# serverSocket = socket(AF_INET,SOCK_STREAM)
+	# serverSocket.connect((serverHost, serverPort))
+	#creates string message to send commands to server
+	message = rejoin()
 	serverSocket.send((message.encode()))
+	sleep(1)
+	dataSocket = socket(AF_INET,SOCK_STREAM)
+	dataSocket.connect((serverHost,dataPort))
+	if command == '-g': 
+		get_files(dataSocket,fileName)
+		dataSocket.close()
+	if command == '-l':
+		get_dir(dataSocket)
+		dataSocket.close()
+		
 	#https://stackoverflow.com/questions/444591/convert-a-string-of-bytes-into-an-int-python
 	#https://docs.python.org/3/library/stdtypes.html#int.to_bytes
-	x =serverSocket.recv(4)
-	x = int.from_bytes( x , byteorder = 'little', signed = False)
-	tmp = (serverSocket.recv(x)).decode()
-	#http://www.pythonforbeginners.com/files/reading-and-writing-files-in-python
-	file_object = open("tmp2", "w")
-	file_object.write(tmp)
-	file_object.close()
 	serverSocket.close()
 	
 main()
